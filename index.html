@@ -1,0 +1,220 @@
+<html><head>
+<title>INFO 3300 HW</title>
+
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+
+  <style>
+  #legend-text{
+    font-family: sans-serif;
+    font-size: 12px;
+    font-weight: normal;
+  }
+  #visual{
+      display: flex;
+      flex-direction: row;
+    }
+  #hover_box {
+    display: flex;
+  }
+  p {
+    font-size: 16px;
+    font-weight: normal;
+  }
+  #label {
+    font-size: 14px;
+    font-weight: normal;
+    font-family: sans-serif;
+  }
+  #column {
+    width: 800px
+  }
+  h2 {
+    margin: 0;
+    margin-left: 20;
+    font-family: sans-serif;
+  }
+
+  </style>
+
+</head>
+<body>
+
+  <h2>What's in a painting? A network of Bob Ross paintings<h2>
+  <div id=visual>
+    <div id=column>
+      <svg id="graph" height="700" width="800">
+      </svg>
+      <svg id="legend" height="100" width="800" margin="0">
+      </svg>
+    </div>
+    <svg id="hover-box" height="700" width="600">
+      <text x="50" y="30" inline-size="20"
+        font-family="sans-serif"
+	       font-size="20px"</text>
+    </svg>
+  </div>
+  <p>The visual above represents Bob Ross' paintins from his show "The Joy of Painting,"
+    where he taught viewers how to create simple, but beautiful nature artworks.
+    Each node in the network is a painting from the show. The paintings are connected
+    on how many features they share, like both having trees or mountains.
+    Since many of his painting do capture similar scenes, there are only links between
+    paintings where more than 90% of the features matched. By clicking a node we can see
+    more information about a painting and how it might relate to nodes around it.<p>
+  <p> Tradeoffs: The network above only represents 200 out of the 400+ paintings created on the show.
+  Even so, there are parts of the network that are hard to explore as many paintings are
+  clustered together. However, the network does help visualize how all the features of
+  his paintings are related, rather than comparing on or two aspects at a time.
+  Also, since the dots are colored by 28 show seasons, there are some issues
+  with being able to perceive color difference. In the future, it would interesting
+  to color the dots by their connectedness to nodes around them so you could easily
+  identify groups of paintings with high similarity.</p>
+
+
+  <script>
+
+    const getData = async function() {
+
+      const svg = d3.select("svg#graph");
+      const hover_box = d3.select("svg#hover-box");
+      const margin = { top: 20, right: 30, bottom: 20, left:30};
+
+      const width = svg.attr("width") - margin.left - margin.right;;
+      const height = svg.attr("height") - margin.top - margin.bottom;;
+
+      const links = await d3.csv("bob_edges.csv");
+      const nodes = await d3.csv("bob_nodes.csv");
+      console.log(links);
+      console.log(nodes);
+
+      let network = d3.select("#graph").append("g");
+
+      let seasonExtent = d3.extent(nodes, d => d.season);
+      let colorScale = d3.scaleSequential(d3.interpolateSpectral).domain([1,28])
+
+      var bobSimulation = d3.forceSimulation()
+                                .nodes(nodes)
+                                .force("links", d3.forceLink()
+                                        .links(links)
+                                        .id( d => d['id'] ) )
+                                .force("repulse", d3.forceManyBody().strength(-40) )
+                                .force("ypos", d3.forceY()
+                                                  .y(height/2.0)
+                                                  .strength(0.10))
+                                .force("xpos", d3.forceX()
+                                                  .x(width/2.0)
+                                                  .strength(0.10))
+                                .force("center", d3.forceCenter(width/2.0, height/2.0))
+                                .on("tick", render);
+
+      function render() {
+
+            let edges = network.selectAll("line.link").data(links)
+                              .join(enter => enter.append("line")
+                                                  .attr("class", "link")
+                                                  .attr("stroke", "#343134"))
+                              .attr("x1", d => d.source.x)
+                              .attr("x2", d => d.target.x)
+                              .attr("y1", d=> d.source.y)
+                              .attr("y2", d=> d.target.y);
+
+            let dots = network.selectAll("circle.node").data(nodes)
+                                .join( enter => enter.append("circle")
+                                                      .attr("class", "node")
+                                                      .attr("stroke", "black")
+                                                      .attr("r", 7)
+                                                      .attr("cx", 0)
+                                                      .attr("cy", 0)
+                                                      .attr("fill", d=> colorScale(d.season))
+                                                      .call(d3.drag().on("start", dragstart)
+                                                                      .on("drag",dragging)
+                                                                      .on("end",dragend))
+                                      )
+                                  .attr("transform", d => `translate(${d.x}, ${d.y})`);
+
+
+          }
+
+    render();
+
+    var lbl = hover_box.append("text").text("CLICK ON A NODE FOR MORE INFO: ")
+                                      .attr("id", "label")
+                                      .attr("text-anchor", "left")
+                                      .attr("y",30);
+    var painting_label = hover_box.append("text")
+                                  .attr("id", "label")
+                                  .attr("text-anchor", "left");
+    var epi_label = hover_box.append("text")
+                              .attr("id", "label")
+                              .attr("text-anchor", "left");
+    var feature_label = hover_box.append("text")
+                                  .attr("id", "label")
+                                  .attr("text-anchor", "left");
+
+    let element_list = []
+    function dragstart(event, d) {
+      if (!event.active) {
+         painting_label.text("NAME: " + d['name'].slice(1,d['name'].length-1)).attr("y", 50);
+         epi_label.text("EPISODE: " + d['episode']).attr("y", 70);
+         feature_label.text("FEATURES: ").attr("y", 90);
+         var feat_str = d['features'].slice(0,d['features'].length-2);
+         var feat_list = feat_str.split(", ");
+         var step = 110
+         feat_list.forEach(feat=> {
+           element_list.push(hover_box.append("text").text(feat)
+                                   .attr("id", "label")
+                                   .attr("text-anchor", "left")
+                                   .attr("inline-size", "300")
+                                   .attr("y", step));
+           step = step + 20
+         })
+
+        bobSimulation.alphaTarget(0.08).restart();
+      }
+      d.fx = event.x;
+      d.fy = event.y;
+
+    }
+    function dragging(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+
+    }
+    function dragend(event, d) {
+      if (!event.active) {
+        painting_label.text("")
+        epi_label.text("")
+        feature_label.text("")
+        element_list.forEach(elt =>elt.text(""))
+        bobSimulation.alphaTarget(0);
+
+      }
+      d.fx = null;
+      d.fy = null;
+    }
+    const legend = d3.select("svg#legend");
+    for (var i = 1; i <= 28; i++) {
+      legend.append("circle").attr("r", 10)
+                        .attr("fill", colorScale(i))
+                        .attr("cx", 25*(i))
+                        .attr("cy", 10);
+    }
+    legend.append("text").text("S1")
+                          .attr("id", "legend-text")
+                          .attr("x", 17)
+                          .attr("text-anchor", "left")
+                          .attr("y", 35);
+    legend.append("text").text("S28")
+                          .attr("id", "legend-text")
+                          .attr("x", 691)
+                          .attr("text-anchor", "left")
+                          .attr("y", 35);
+    legend.append("text").text("Show Season")
+                          .attr("id", "legend-text")
+                          .attr("x", 320)
+                          .attr("text-anchor", "left")
+                          .attr("y", 35);
+  }
+  getData();
+  </script>
+</body>
+</html>
